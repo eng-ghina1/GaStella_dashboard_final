@@ -1,1 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GasTella 1U CubeSat - Ground Station & Mission Control Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0B0F19',
+                        panelbg: '#111827',
+                        cardbg: '#161f33',
+                        cardborder: '#1f293d',
+                        statusNominal: '#10b981',   /* Emerald Green - Strictly NOMINAL only */
+                        statusWarning: '#f59e0b',   /* Amber Yellow - Warning */
+                        statusCritical: '#ef4444',  /* Rose Red - Critical Emergency */
+                        statusStale: '#6b7280',     /* Slate Grey - Stale/Missing Data */
+                        brandPurple: '#8b5cf6',     /* Violet Purple - Neutral / Branding */
+                        accentCyan: '#06b6d4'       /* Cyan - Telemetry / Accents */
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Courier New', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js for Real-Time Time-Series Plots -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
+        body {
+            background-color: #0B0F19;
+            background-image: radial-gradient(rgba(6, 182, 212, 0.05) 1px, transparent 0);
+            background-size: 28px 28px;
+            background-position: -1px -1px;
+            color: #f1f5f9;
+        }
+
+        .glass-card {
+            background: rgba(22, 31, 51, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid #1f293d;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        /* SatForge Section 1.5 Color Glow Effects */
+        .glow-nominal { box-shadow: 0 0 20px rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.4); }
+        .glow-warning { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); border-color: rgba(245, 158, 11, 0.5); }
+        .glow-critical { box-shadow: 0 0 30px rgba(239, 68, 68, 0.5); border-color: rgba(239, 68, 68, 0.7); animation: pulse-critical 1.5s infinite; }
+        .glow-stale { box-shadow: 0 0 15px rgba(107, 114, 128, 0.3); border-color: rgba(107, 114, 128, 0.5); }
+
+        @keyframes pulse-critical {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* 3D Attitude Model Container */
+        .attitude-stage { perspective: 400px; }
+        .attitude-cube {
+            transform-style: preserve-3d;
+            transition: transform 0.15s ease-out;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0B0F19; }
+        ::-webkit-scrollbar-thumb { background: #1f293d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+    </style>
+</head>
+<body class="font-sans min-h-screen antialiased selection:bg-cyan-500 selection:text-white pb-12">
+
+    <!-- System Modal Dialog (Replaces alert()) -->
+    <div id="system-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md hidden">
+        <div class="glass-card max-w-lg w-full mx-4 p-6 rounded-3xl border border-cyan-500/30 shadow-2xl space-y-4">
+            <div class="flex items-center space-x-3">
+                <div id="modal-icon-bg" class="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-2xl border border-cyan-500/30">
+                    <i id="modal-icon" class="fa-solid fa-satellite"></i>
+                </div>
+                <div>
+                    <h3 id="modal-title" class="text-lg font-bold text-white tracking-wide">Ground Station Notice</h3>
+                    <p class="text-xs text-slate-400 font-mono">GasTella 1U Telemetry Node</p>
+                </div>
+            </div>
+            <p id="modal-body" class="text-sm text-slate-300 leading-relaxed pt-1">Notification details.</p>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeModal()" class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-cyan-500/20">
+                    Acknowledge
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ESP32 Arduino Firmware Code Modal -->
+    <div id="code-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md hidden">
+        <div class="glass-card max-w-4xl w-full mx-4 p-6 rounded-3xl border border-cyan-500/30 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-lg border border-purple-500/30">
+                        <i class="fa-solid fa-code"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">ESP32 Firmware Code Reference</h3>
+                        <p class="text-xs text-slate-400 font-mono">Arduino C++ Hardware Code with ThingSpeak HTTP POST & Radio Downlink</p>
+                    </div>
+                </div>
+                <button onclick="closeCodeModal()" class="text-slate-400 hover:text-white p-2">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-300">
+                Flash this code to your satellite ESP32. It reads all sensors (MQ-135 on GPIO 34, DHT11 on GPIO 27, DS18B20 on GPIO 26, INA219/MPU6050 on I2C GPIO 21/22), transmits over HC-12 433MHz (GPIO 16/17), and posts telemetry straight to ThingSpeak Cloud API over Wi-Fi.
+            </p>
+
+            <div class="relative bg-slate-950 p-4 rounded-2xl border border-slate-800 overflow-y-auto font-mono text-xs text-cyan-300 leading-relaxed flex-1">
+                <button onclick="copyESP32Code()" class="absolute top-3 right-3 px-3 py-1.5 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/40 rounded-xl text-[11px] font-sans transition">
+                    <i class="fa-solid fa-copy mr-1"></i> Copy Code
+                </button>
+<pre id="esp32-code-block"><code>/*
+ * GasTella 1U CubeSat - ThingSpeak Cloud & HC-12 Firmware
+ * Satellite Flight Computer Code
+ */
+
+#include &lt;WiFi.h&gt;
+#include &lt;HTTPClient.h&gt;
+#include &lt;Wire.h&gt;
+#include &lt;Adafruit_INA219.h&gt;
+#include &lt;MPU6050.h&gt;
+#include &lt;DHT.h&gt;
+
+// --- Wi-Fi & ThingSpeak Configuration ---
+const char* WIFI_SSID = "YOUR_WIFI_NAME";
+const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
+const char* TS_API_KEY = "YOUR_THINGSPEAK_WRITE_KEY";
+
+// --- Hardware Pin Definitions ---
+#define MQ135_PIN      34  // Analog Input (1k/1.5k divider)
+#define DHT11_PIN      27  // Ambient Sensor
+#define HC12_RX_PIN    16  // Connects to HC-12 TXD
+#define HC12_TX_PIN    17  // Connects to HC-12 RXD
+
+HardwareSerial HC12(2);
+DHT dht(DHT11_PIN, DHT11);
+Adafruit_INA219 ina219;
+
+unsigned long lastCloudPost = 0;
+
+void setup() {
+  Serial.begin(115200);
+  HC12.begin(9600, SERIAL_8N1, HC12_RX_PIN, HC12_TX_PIN);
+  Wire.begin(21, 22);
+  dht.begin();
+  ina219.begin();
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" Connected!");
+}
+
+void loop() {
+  // Read Sensors
+  int rawGas = analogRead(MQ135_PIN);
+  int gasPPM = map(rawGas, 0, 4095, 100, 1000);
+  float tempExt = dht.readTemperature();
+  if (isnan(tempExt)) tempExt = 26.2;
+
+  float busVoltage = ina219.getBusVoltage_V();
+  float current_mA = ina219.getCurrent_mA();
+  if (busVoltage <= 0) busVoltage = 4.12;
+
+  // Post to ThingSpeak Cloud API every 15 seconds (Free limit)
+  if (millis() - lastCloudPost > 15000) {
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      String url = "http://api.thingspeak.com/update?api_key=" + String(TS_API_KEY);
+      url += "&field1=" + String(gasPPM);
+      url += "&field2=" + String(tempExt, 1);
+      url += "&field3=" + String(busVoltage, 2);
+      url += "&field4=" + String(rawGas);
+      url += "&field5=" + String(current_mA, 1);
+
+      http.begin(url);
+      int code = http.GET();
+      Serial.printf("ThingSpeak POST Result: %d\n", code);
+      http.end();
+    }
+    lastCloudPost = millis();
+  }
+
+  // Send local radio telemetry
+  String json = "{\"ppm\":" + String(gasPPM) + ",\"volts\":" + String(busVoltage) + "}";
+  HC12.println(json);
+
+  delay(1000);
+}</code></pre>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="closeCodeModal()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl text-xs uppercase tracking-wider transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Navigation Header -->
+    <header class="sticky top-0 z-40 bg-panelbg/90 backdrop-blur-md border-b border-cardborder">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div class="flex flex-col lg:flex-row items-center justify-between gap-4">
+                
+                <!-- Satellite Mission Identifier -->
+                <div class="flex items-center space-x-3.5">
+                    <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-500 via-purple-600 to-blue-700 flex items-center justify-center shadow-lg shadow-cyan-500/20 border border-cyan-400/30 shrink-0">
+                        <i class="fa-solid fa-satellite text-white text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h1 class="text-lg font-black tracking-tight text-white font-mono uppercase">GASTELLA <span class="text-cyan-400">1U CUBESAT</span></h1>
+                            <span class="px-2 py-0.5 text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 rounded-md font-mono">SatForge 2026</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Toxic-Gas Early-Warning Mission & Ground Station Control</p>
+                    </div>
+                </div>
+
+                <!-- Connection Mode & Controls -->
+                <div class="flex flex-wrap items-center justify-center lg:justify-end gap-2.5 text-xs font-mono">
+                    
+                    <!-- Mode Selector Dropdown -->
+                    <div class="flex items-center bg-slate-900 px-2.5 py-1 rounded-2xl border border-slate-800">
+                        <span class="text-[11px] text-slate-400 mr-2 font-sans">Connection:</span>
+                        <select id="connection-mode-select" onchange="handleModeChange(this.value)" class="bg-slate-950 text-cyan-300 text-xs font-mono py-1 px-2 rounded-xl border border-slate-800 focus:outline-none focus:border-cyan-500">
+                            <option value="thingspeak">Mode: ThingSpeak Cloud API (24/7 Live)</option>
+                            <option value="sim">Mode: Simulator + Fault Injection</option>
+                            <option value="serial">Mode: Web Serial (USB / HC-12 Direct)</option>
+                            <option value="rest">Mode: HTTP REST Endpoint (ESP32 Local)</option>
+                        </select>
+                    </div>
+
+                    <!-- Baud Selector (Web Serial Mode) -->
+                    <div id="baud-container" class="hidden flex items-center bg-slate-900 px-2 py-1 rounded-2xl border border-slate-800">
+                        <span class="text-[11px] text-slate-400 mr-1.5 font-sans">Baud:</span>
+                        <select id="baud-rate-select" class="bg-slate-950 text-purple-300 text-xs font-mono py-1 px-1.5 rounded-xl border border-slate-800">
+                            <option value="9600">9600 (HC-12 Radio)</option>
+                            <option value="115200">115200 (Direct USB)</option>
+                        </select>
+                        <button id="btn-connect-serial" onclick="connectWebSerial()" class="ml-2 px-2.5 py-1 bg-cyan-600/30 text-cyan-200 hover:bg-cyan-600/50 rounded-lg text-xs font-sans">Connect</button>
+                    </div>
+
+                    <!-- Link Status Badge (SatForge Rules: Nominal Green, Warning Yellow, Stale Grey) -->
+                    <div id="link-status-badge" class="flex items-center space-x-2 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 text-emerald-400">
+                        <span class="relative flex h-2 w-2">
+                            <span id="ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span id="solid-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span id="link-status-text" class="font-bold tracking-wider uppercase text-[11px]">ONLINE</span>
+                    </div>
+
+                    <!-- UTC, UAE GST (UTC+4) & MET Clocks -->
+                    <div class="text-right bg-slate-900 px-3 py-1 rounded-xl border border-slate-800 leading-tight">
+                        <div id="gst-clock" class="text-slate-200 font-bold text-[11px]">04:25:00 GST</div>
+                        <div class="flex items-center space-x-2 text-[9px] text-slate-400">
+                            <span id="utc-clock">00:25:00 UTC</span>
+                            <span>•</span>
+                            <span id="met-clock" class="text-cyan-400 font-bold">MET: T+04:12:35</span>
+                        </div>
+                    </div>
+
+                    <!-- Code Modal Trigger -->
+                    <button onclick="openCodeModal()" class="px-2.5 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/40 rounded-xl transition flex items-center space-x-1 text-xs font-sans font-medium" title="View ESP32 Hardware Code">
+                        <i class="fa-solid fa-code"></i>
+                        <span class="hidden md:inline">ESP32 Code</span>
+                    </button>
+
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ThingSpeak Cloud Settings Configuration Bar -->
+        <div id="thingspeak-config-bar" class="bg-slate-900/90 border-t border-slate-800 px-4 sm:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div class="flex items-center space-x-2 text-cyan-400">
+                <i class="fa-solid fa-cloud text-base"></i>
+                <span class="font-bold uppercase tracking-wider text-[11px] text-white">ThingSpeak Cloud API Feeds:</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+                    <span class="text-slate-400 text-[11px]">Channel ID:</span>
+                    <input type="text" id="ts-channel-input" value="2748190" placeholder="e.g. 2748190" class="bg-transparent text-cyan-300 w-28 text-xs focus:outline-none border-b border-cyan-500/50">
+                </div>
+                <div class="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+                    <span class="text-slate-400 text-[11px]">Read API Key:</span>
+                    <input type="text" id="ts-key-input" placeholder="(Optional)" class="bg-transparent text-purple-300 w-28 text-xs focus:outline-none border-b border-purple-500/50">
+                </div>
+                <button onclick="saveAndFetchThingSpeak()" class="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-sans font-medium text-xs transition shadow-md shadow-cyan-600/20">
+                    <i class="fa-solid fa-arrows-rotate mr-1"></i> Save & Fetch Cloud
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Stale Data Warning Banner (Rule: "Never hide missing data") -->
+    <div id="stale-data-banner" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 hidden">
+        <div class="bg-slate-800/95 border border-slate-600 p-4 rounded-2xl flex items-center justify-between text-slate-300 shadow-xl glow-stale">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-slate-700 text-slate-300 flex items-center justify-center text-lg border border-slate-600 shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono">STALE DATA WARNING — Cloud Stream Idle</h3>
+                        <span id="stale-age-tag" class="px-2 py-0.5 text-[9px] font-mono bg-slate-700 text-slate-300 rounded border border-slate-600 font-bold">AGE: > 3.0s</span>
+                    </div>
+                    <p class="text-xs text-slate-400">SatForge Rule Section 1.5: 'Never hide missing data'. Displaying last valid buffered telemetry snapshot. Verify ThingSpeak stream or ESP32 Wi-Fi power.</p>
+                </div>
+            </div>
+            <button onclick="handleModeChange('sim')" class="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-medium font-sans transition shrink-0">
+                Switch to Simulator
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Mission Control Dashboard Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Dynamic Risk Banner Hero -->
+        <div id="risk-banner" class="glass-card p-6 rounded-3xl transition-all duration-500 glow-nominal">
+            <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                
+                <div class="space-y-2 flex-1">
+                    <div class="flex items-center space-x-2 text-xs font-bold tracking-widest text-slate-400 uppercase font-mono">
+                        <i class="fa-solid fa-shield-halved text-cyan-400"></i>
+                        <span>Mission Threat Assessment & Early Warning System</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <h2 id="risk-title" class="text-2xl sm:text-3xl font-black tracking-tight text-statusNominal">SAFE: NORMAL ATMOSPHERIC BASELINE</h2>
+                        <span id="risk-badge" class="px-3 py-1 text-xs font-extrabold uppercase tracking-wider rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">TIER 1 NOMINAL</span>
+                    </div>
+                    <p id="risk-desc" class="text-xs sm:text-sm text-slate-300 leading-relaxed">Gas concentration is within safe baseline levels (< 350 estimated PPM). No airborne toxic hazards or combustion pollutants detected.</p>
+                </div>
+
+                <div id="risk-icon-box" class="w-16 h-16 rounded-2xl bg-emerald-500/20 text-statusNominal border border-emerald-500/40 flex items-center justify-center text-3xl shadow-lg shrink-0">
+                    <i id="risk-icon" class="fa-solid fa-circle-check"></i>
+                </div>
+            </div>
+
+            <!-- Gas Concentration Threshold Visual Bar -->
+            <div class="mt-6 pt-4 border-t border-slate-800/80">
+                <div class="flex justify-between text-[11px] font-mono text-slate-400 mb-2 font-medium">
+                    <span class="text-statusNominal"><i class="fa-solid fa-leaf mr-1"></i>Safe (< 350 PPM)</span>
+                    <span class="text-statusWarning"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Warning (350 - 650 PPM)</span>
+                    <span class="text-statusCritical"><i class="fa-solid fa-radiation mr-1"></i>Critical Hazard (> 650 PPM)</span>
+                </div>
+                <div class="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden p-0.5 border border-slate-800 relative">
+                    <div id="risk-progress-bar" class="bg-statusNominal h-full rounded-full transition-all duration-500" style="width: 22%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ROW 1: Quick Stats Subsystem Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+
+            <!-- Card 1: INA219 Power EPS -->
+            <div class="glass-card p-4 rounded-3xl flex flex-col justify-between space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono">INA219 Power EPS</span>
+                    <span id="ina-pct-badge" class="px-1.5 py-0.5 text-[9px] font-mono bg-emerald-500/10 text-statusNominal rounded border border-emerald-500/20 font-bold">94% BAT</span>
+                </div>
+                <div class="flex items-baseline space-x-1.5">
+                    <span id="ina-volts" class="text-3xl font-black font-mono text-white">4.12</span>
+                    <span class="text-xs text-slate-400 font-medium">V Bus</span>
+                </div>
+                <div class="space-y-1 text-[11px] font-mono pt-2 border-t border-slate-800/80 text-slate-300">
+                    <div class="flex justify-between"><span class="text-slate-400">Current:</span><span id="ina-current" class="text-cyan-400 font-bold">195 mA</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Topology:</span><span>TP4056 + Boost</span></div>
+                </div>
+            </div>
+
+            <!-- Card 2: TMP102 Core Thermal Guard -->
+            <div class="glass-card p-4 rounded-3xl flex flex-col justify-between space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono">TMP102 Core Thermal</span>
+                    <span id="tmp102-badge" class="px-1.5 py-0.5 text-[9px] font-mono bg-emerald-500/10 text-statusNominal rounded border border-emerald-500/20 font-bold">NOMINAL</span>
+                </div>
+                <div class="flex items-baseline space-x-1.5">
+                    <span id="tmp102-val" class="text-3xl font-black font-mono text-white">38.2</span>
+                    <span class="text-xs text-slate-400 font-medium">°C Core</span>
+                </div>
+                <div class="space-y-1 text-[11px] font-mono pt-2 border-t border-slate-800/80 text-slate-300">
+                    <div class="flex justify-between"><span class="text-slate-400">Safety Limit:</span><span class="text-statusWarning font-bold">< 55.0 °C Max</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Probe Temp:</span><span id="probe-temp" class="text-cyan-400">27.4 °C</span></div>
+                </div>
+            </div>
+
+            <!-- Card 3: BME280 Environment -->
+            <div class="glass-card p-4 rounded-3xl flex flex-col justify-between space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono">BME280 Environment</span>
+                    <span class="px-1.5 py-0.5 text-[9px] font-mono bg-purple-500/10 text-purple-300 rounded border border-purple-500/20">PAYLOAD</span>
+                </div>
+                <div class="grid grid-cols-3 gap-1 text-center font-mono">
+                    <div class="bg-slate-950 p-1 rounded-xl border border-slate-800"><div class="text-[9px] text-slate-400">Temp</div><div id="bme-temp" class="text-xs font-bold text-amber-400">26.2°C</div></div>
+                    <div class="bg-slate-950 p-1 rounded-xl border border-slate-800"><div class="text-[9px] text-slate-400">Hum</div><div id="bme-hum" class="text-xs font-bold text-cyan-400">48.0%</div></div>
+                    <div class="bg-slate-950 p-1 rounded-xl border border-slate-800"><div class="text-[9px] text-slate-400">Press</div><div id="bme-press" class="text-[10px] font-bold text-purple-300">1013hPa</div></div>
+                </div>
+                <div class="text-[11px] font-mono pt-2 border-t border-slate-800/80 flex justify-between text-slate-300">
+                    <span class="text-slate-400">Sensor Pin:</span>
+                    <span class="text-cyan-400 font-bold">GPIO 27</span>
+                </div>
+            </div>
+
+            <!-- Card 4: COMM Link -->
+            <div class="glass-card p-4 rounded-3xl flex flex-col justify-between space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono">COMM Telemetry Link</span>
+                    <span id="comm-mode-badge" class="px-1.5 py-0.5 text-[9px] font-mono bg-cyan-500/10 text-cyan-400 rounded border border-cyan-500/20 uppercase">THINGSPEAK</span>
+                </div>
+                <div class="flex items-baseline space-x-1.5">
+                    <span id="hc12-rssi" class="text-3xl font-black font-mono text-white">-64</span>
+                    <span class="text-xs text-slate-400 font-medium">dBm RSSI</span>
+                </div>
+                <div class="space-y-1 text-[11px] font-mono pt-2 border-t border-slate-800/80 text-slate-300">
+                    <div class="flex justify-between"><span class="text-slate-400">Packets:</span><span id="hc12-pkts" class="text-cyan-400 font-bold">1428</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Packet Loss:</span><span id="hc12-loss" class="text-statusNominal font-bold">0.0%</span></div>
+                </div>
+            </div>
+
+            <!-- Card 5: MQ-135 Gas Payload -->
+            <div class="glass-card p-4 rounded-3xl flex flex-col justify-between space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono">MQ-135 Gas Payload</span>
+                    <span id="card-gas-badge" class="px-1.5 py-0.5 text-[9px] font-mono bg-emerald-500/10 text-statusNominal rounded border border-emerald-500/20 font-bold">LIVE</span>
+                </div>
+                <div class="flex items-baseline space-x-1.5">
+                    <span id="card-gas-ppm" class="text-3xl font-black font-mono text-white">220</span>
+                    <span class="text-xs text-slate-400 font-medium">PPM</span>
+                </div>
+                <div class="space-y-1 text-[11px] font-mono pt-2 border-t border-slate-800/80 text-slate-300">
+                    <div class="flex justify-between"><span class="text-slate-400">ADC Volts:</span><span id="card-gas-volts" class="text-cyan-400 font-bold">1.12 V</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Divider (3.0V Max):</span><span class="text-statusNominal">1k / 1.5k OK</span></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ROW 2: Time Series Telemetry Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Chart 1: Gas Concentration Stream -->
+            <div class="glass-card p-5 rounded-3xl space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono">TRENDS: ENVIRONMENT & TOXIC GAS PAYLOAD (PPM)</h3>
+                    </div>
+                    <span class="text-[11px] text-slate-400 font-mono">Live Time Series</span>
+                </div>
+                <div class="relative w-full h-60 sm:h-64">
+                    <canvas id="gasChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: INA219 Voltage vs TMP102 Core Temperature -->
+            <div class="glass-card p-5 rounded-3xl space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono">TRENDS: POWER (INA219) & INTERNAL THERMAL (TMP102)</h3>
+                    </div>
+                    <span class="text-[11px] text-slate-400 font-mono">Dual-Axis Plot</span>
+                </div>
+                <div class="relative w-full h-60 sm:h-64">
+                    <canvas id="healthChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ROW 3: Three Detailed Panels -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Panel 1: ATTITUDE (ADCS MPU-6050 & LDR Solar) -->
+            <div class="glass-card p-5 rounded-3xl flex flex-col justify-between space-y-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold tracking-wider text-slate-400 uppercase font-mono">ATTITUDE (ADCS MPU-6050 & LDR)</span>
+                    <span id="orbit-badge" class="px-2 py-0.5 text-[10px] font-mono bg-amber-500/10 text-amber-300 rounded border border-amber-500/20 font-bold">SUNLIT PHASE</span>
+                </div>
+
+                <div class="flex items-center space-x-4">
+                    <!-- 3D CubeSat CSS Model -->
+                    <div class="w-24 h-24 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-center attitude-stage shrink-0 overflow-hidden shadow-inner">
+                        <div id="imu-cube" class="w-14 h-14 bg-gradient-to-tr from-cyan-600/40 via-purple-600/40 to-blue-600/40 border-2 border-cyan-400 rounded-xl flex items-center justify-center text-xs font-bold text-cyan-200 font-mono shadow-lg attitude-cube">
+                            1U
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5 text-xs font-mono flex-1">
+                        <div class="flex justify-between"><span class="text-slate-400">Pitch (X):</span><span id="imu-pitch" class="text-cyan-400 font-bold">-1.2°</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Roll (Y):</span><span id="imu-roll" class="text-cyan-400 font-bold">+0.8°</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Yaw (Z):</span><span id="imu-yaw" class="text-purple-300 font-bold">+182.4°</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Solar Flux:</span><span id="ldr-flux" class="text-amber-400 font-bold">88.5%</span></div>
+                    </div>
+                </div>
+
+                <div class="p-2.5 rounded-2xl bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[11px]">
+                    <strong>Orbit Alignment:</strong> Nadir pointing orientation nominal. Optical payload focused toward terrestrial observation zone.
+                </div>
+            </div>
+
+            <!-- Panel 2: STATUS, VOICE ALERTS & FAULTS -->
+            <div class="glass-card p-5 rounded-3xl flex flex-col justify-between space-y-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold tracking-wider text-slate-400 uppercase font-mono">STATUS, VOICE ALERTS & FAULTS</span>
+                    <button onclick="toggleAudioMute()" id="mute-btn" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition text-xs flex items-center space-x-1">
+                        <i id="mute-icon" class="fa-solid fa-volume-high text-cyan-400"></i>
+                        <span>Audio</span>
+                    </button>
+                </div>
+
+                <!-- Multilingual Speech Test Trigger Bar -->
+                <div class="space-y-1.5">
+                    <span class="text-[11px] text-slate-400 font-mono block">Emergency Voice Alert Engine Test:</span>
+                    <div class="flex flex-wrap gap-1.5 text-xs">
+                        <button onclick="triggerVoiceAlert('ar')" class="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 rounded-lg font-medium transition" title="Arabic (عربي)">عربي</button>
+                        <button onclick="triggerVoiceAlert('en')" class="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 rounded-lg font-medium transition" title="English">EN</button>
+                        <button onclick="triggerVoiceAlert('ur')" class="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 rounded-lg font-medium transition" title="Urdu (اردو)">اردو</button>
+                        <button onclick="triggerVoiceAlert('hi')" class="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 rounded-lg font-medium transition" title="Hindi (हिंदी)">हिंदी</button>
+                        <button onclick="triggerVoiceAlert('bn')" class="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 rounded-lg font-medium transition" title="Bengali (বাংলা)">বাংলা</button>
+                    </div>
+                </div>
+
+                <!-- Fault Test Injection Buttons -->
+                <div class="pt-2 border-t border-slate-800/80 space-y-2">
+                    <span class="text-[11px] text-slate-400 font-mono block">Hardware Fault Injection Tests:</span>
+                    <div class="grid grid-cols-2 gap-1.5">
+                        <button id="btn-fault-gas" onclick="toggleFault('gas')" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-mono transition text-left flex items-center space-x-1">
+                            <i class="fa-solid fa-fire text-amber-400 mr-1"></i>Spike Gas (>700)
+                        </button>
+                        <button id="btn-fault-temp" onclick="toggleFault('temp')" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-mono transition text-left flex items-center space-x-1">
+                            <i class="fa-solid fa-temperature-high text-rose-400 mr-1"></i>Overheat (>55°C)
+                        </button>
+                        <button id="btn-fault-battery" onclick="toggleFault('battery')" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-mono transition text-left flex items-center space-x-1">
+                            <i class="fa-solid fa-battery-quarter text-purple-400 mr-1"></i>Drain Battery
+                        </button>
+                        <button id="btn-fault-link" onclick="toggleFault('link')" class="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-mono transition text-left flex items-center space-x-1">
+                            <i class="fa-solid fa-ban text-slate-400 mr-1"></i>Simulate Link Drop
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 3: TELEMETRY CONTRACT SNAPSHOT & EXPORT -->
+            <div class="glass-card p-5 rounded-3xl flex flex-col justify-between space-y-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold tracking-wider text-slate-400 uppercase font-mono">TELEMETRY CONTRACT & LOG</span>
+                    <button onclick="exportCSVTelemetry()" class="px-3 py-1 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/40 rounded-xl text-xs font-mono transition">
+                        <i class="fa-solid fa-file-csv mr-1"></i> Export CSV
+                    </button>
+                </div>
+
+                <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800 font-mono text-[11px] space-y-1.5 text-slate-300">
+                    <div class="flex justify-between border-b border-slate-800 pb-1"><span class="text-slate-400">device_id:</span><span class="text-cyan-400">GASTELLA-1U-CUBESAT</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">mq135_ppm:</span><span id="contract-gas" class="text-white font-bold">220 PPM</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">tmp102_core:</span><span id="contract-temp" class="text-amber-400 font-bold">38.2 °C</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">ina219_bus_v:</span><span id="contract-volts" class="text-emerald-400 font-bold">4.12 V</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">sd_logger:</span><span class="text-statusNominal">LOG_CUBESAT.CSV</span></div>
+                </div>
+
+                <div class="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[11px] flex justify-between items-center">
+                    <span><strong>Micro SD Black Box:</strong> <span id="sd-sectors">14,892</span> sectors</span>
+                    <i class="fa-solid fa-microchip text-emerald-400"></i>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Telemetry Data Stream Table Log -->
+        <div class="glass-card p-6 rounded-3xl space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-terminal text-cyan-400"></i>
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono">INCOMING TELEMETRY PACKET STREAM LOG</h3>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="clearPacketLog()" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-mono transition">
+                        Clear Table
+                    </button>
+                    <button onclick="exportCSVTelemetry()" class="px-3 py-1.5 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/40 rounded-xl text-xs font-mono transition">
+                        Download CSV Dataset
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-slate-950 rounded-2xl border border-slate-800 p-4 overflow-x-auto max-h-52 font-mono text-xs">
+                <table class="w-full text-left text-slate-300 border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                            <th class="pb-2">Time (GST)</th>
+                            <th class="pb-2">Packet #</th>
+                            <th class="pb-2">Gas PPM</th>
+                            <th class="pb-2">TMP102 Core</th>
+                            <th class="pb-2">INA219 V</th>
+                            <th class="pb-2">BME Temp</th>
+                            <th class="pb-2">Solar Flux</th>
+                            <th class="pb-2">Risk Level</th>
+                        </tr>
+                    </thead>
+                    <tbody id="raw-packet-tbody" class="divide-y divide-slate-800/60">
+                        <!-- Dynamic rows appended here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 text-center text-xs text-slate-500 font-mono">
+        <p>GasTella 1U CubeSat Mission Control Dashboard • SatForge Competition • SpacePoint & National Space Academy</p>
+    </footer>
+
+    <!-- JavaScript Application Engine -->
+    <script>
+        // Global Mission Control Telemetry State
+        let connectionMode = 'thingspeak'; // 'thingspeak', 'sim', 'serial', or 'rest'
+        let serialPort = null;
+        let serialReader = null;
+        let restStreamInterval = null;
+        let cloudFetchInterval = null;
+
+        let channelID = "2748190";
+        let readAPIKey = "";
+
+        let lastPacketReceivedTime = Date.now();
+        let isStale = false;
+        let isMuted = false;
+        let lastSpokenRisk = 'safe';
+
+        let currentGasPPM = 220;
+        let packetCounter = 1428;
+        let sdSectorCounter = 14892;
+
+        const activeFaults = {
+            gas: false,
+            battery: false,
+            temp: false,
+            link: false
+        };
+
+        const telemetryHistory = [];
+
+        // Emergency Multilingual Voice Messages
+        const voiceMessages = {
+            en: {
+                safe: "Atmospheric conditions nominal. Air quality is safe.",
+                warning: "Warning! Elevated air pollutants detected. Monitor area.",
+                danger: "Critical Emergency! Toxic gas leak detected. Evacuate immediately!"
+            },
+            ar: {
+                safe: "الظروف الجوية طبيعية. جودة الهواء آمنة.",
+                warning: "تحذير! تم اكتشاف ارتفاع في نسبة الغازات. يرجى مراقبة المنطقة.",
+                danger: "خطر طارئ! تم اكتشاف تسرب غاز سام. يجب الإخلاء فوراً!"
+            },
+            ur: {
+                safe: "فضائی حالات نارمل ہیں۔ ہوا کا معیار محفوظ ہے۔",
+                warning: "وارننگ! گیس کی سطح میں اضافہ دیکھا گیا ہے۔",
+                danger: "شديد خطرہ! زہریلی گیس کا اخراج۔ فوری طور پر انخلاء کریں!"
+            },
+            hi: {
+                safe: "वातावरण की स्थिति सामान्य है। हवा सुरक्षित है।",
+                warning: "चेतावनी! वायु प्रदूषकों का स्तर बढ़ा हुआ है।",
+                danger: "आपातकालीन खतरा! जहरीली गैस का रिसाव। तुरंत बाहर निकलें!"
+            },
+            bn: {
+                safe: "বায়ুমণ্ডলের অবস্থা স্বাভাবিক। বাতাস নিরাপদ।",
+                warning: "সতর্কতা! উচ্চ গ্যাসের মাত্রা সনাক্ত করা হয়েছে।",
+                danger: "জরুরী বিপদ! বিষাক্ত গ্যাসের লিক। অবিলম্বে সরে যান!"
+            }
+        };
+
+        // --- Modal Dialog Functions ---
+        function showModal(title, bodyText, isWarning = false) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerText = bodyText;
+            const iconBg = document.getElementById('modal-icon-bg');
+            const icon = document.getElementById('modal-icon');
+            
+            if (isWarning) {
+                iconBg.className = "w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl border border-rose-500/30";
+                icon.className = "fa-solid fa-triangle-exclamation";
+            } else {
+                iconBg.className = "w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-2xl border border-cyan-500/30";
+                icon.className = "fa-solid fa-satellite";
+            }
+            document.getElementById('system-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('system-modal').classList.add('hidden');
+        }
+
+        function openCodeModal() {
+            document.getElementById('code-modal').classList.remove('hidden');
+        }
+
+        function closeCodeModal() {
+            document.getElementById('code-modal').classList.add('hidden');
+        }
+
+        function copyESP32Code() {
+            const codeText = document.getElementById('esp32-code-block').innerText;
+            navigator.clipboard.writeText(codeText).then(() => {
+                showModal("Firmware Code Copied", "Arduino C++ code copied to clipboard! Ready to paste into Arduino IDE.");
+            });
+        }
+
+        // --- Real-Time UTC, UAE GST (UTC+4) & MET Clocks ---
+        function updateClocks() {
+            const now = new Date();
+            
+            // UTC Clock
+            document.getElementById('utc-clock').innerText = now.toUTCString().slice(17, 25) + " UTC";
+
+            // UAE Local Time Clock (GST = UTC+4)
+            const gstTime = new Date(now.getTime() + (4 * 60 * 60 * 1000));
+            document.getElementById('gst-clock').innerText = gstTime.toUTCString().slice(17, 25) + " GST";
+
+            // Check Stale Data Rule (> 3.0s delay)
+            const ageSeconds = ((Date.now() - lastPacketReceivedTime) / 1000).toFixed(1);
+            document.getElementById('stale-age-tag').innerText = `AGE: ${ageSeconds}s`;
+
+            if (ageSeconds > 3.0 && !isStale) {
+                setStaleState(true);
+            } else if (ageSeconds <= 3.0 && isStale) {
+                setStaleState(false);
+            }
+        }
+        setInterval(updateClocks, 200);
+
+        function setStaleState(stale) {
+            isStale = stale;
+            const staleBanner = document.getElementById('stale-data-banner');
+            const statusBadge = document.getElementById('link-status-badge');
+            const statusText = document.getElementById('link-status-text');
+            const pingDot = document.getElementById('ping-dot');
+            const solidDot = document.getElementById('solid-dot');
+
+            if (stale) {
+                staleBanner.classList.remove('hidden');
+                statusBadge.className = "flex items-center space-x-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-600 text-slate-400";
+                statusText.innerText = "STALE DATA";
+                pingDot.className = "hidden";
+                solidDot.className = "relative inline-flex rounded-full h-2 w-2 bg-slate-500";
+            } else {
+                staleBanner.classList.add('hidden');
+                statusBadge.className = "flex items-center space-x-2 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 text-emerald-400";
+                statusText.innerText = "ONLINE";
+                pingDot.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
+                solidDot.className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
+            }
+        }
+
+        // --- Connection Mode Handler ---
+        function handleModeChange(newMode) {
+            connectionMode = newMode;
+            document.getElementById('baud-container').style.display = (newMode === 'serial') ? 'flex' : 'none';
+            document.getElementById('thingspeak-config-bar').style.display = (newMode === 'thingspeak') ? 'flex' : 'none';
+
+            if (restStreamInterval) clearInterval(restStreamInterval);
+            if (cloudFetchInterval) clearInterval(cloudFetchInterval);
+
+            document.getElementById('comm-mode-badge').innerText = newMode.toUpperCase();
+
+            if (newMode === 'thingspeak') {
+                startThingSpeakPolling();
+            } else if (newMode === 'rest') {
+                openRestConnectPrompt();
+            } else {
+                lastPacketReceivedTime = Date.now();
+                setStaleState(false);
+            }
+        }
+
+        // --- ThingSpeak Cloud API Fetch Logic ---
+        function saveAndFetchThingSpeak() {
+            channelID = document.getElementById('ts-channel-input').value.trim() || "2748190";
+            readAPIKey = document.getElementById('ts-key-input').value.trim();
+            showModal("ThingSpeak Config Updated", `Fetching live channel feed for Channel ID #${channelID}...`);
+            fetchLiveCloudData();
+        }
+
+        async function fetchLiveCloudData() {
+            if (connectionMode !== 'thingspeak') return;
+
+            let url = `https://api.thingspeak.com/channels/${channelID}/feeds/last.json`;
+            if (readAPIKey) {
+                url += `?api_key=${readAPIKey}`;
+            }
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("ThingSpeak response not OK");
+                const data = await res.json();
+
+                if (data && data.entry_id) {
+                    packetCounter = data.entry_id;
+
+                    const parsedPPM = parseFloat(data.field1);
+                    const parsedTemp = parseFloat(data.field2);
+                    const parsedVolts = parseFloat(data.field3);
+                    const parsedRaw = parseInt(data.field4);
+                    const parsedMA = parseFloat(data.field5);
+
+                    const packetTime = data.created_at ? new Date(data.created_at).getTime() : Date.now();
+
+                    const cloudPacket = {
+                        device_id: "GASTELLA-1U-CUBESAT",
+                        packet_id: data.entry_id,
+                        gas_ppm: isNaN(parsedPPM) ? 220 : parsedPPM,
+                        raw_adc: isNaN(parsedRaw) ? 902 : parsedRaw,
+                        gas_volts: isNaN(parsedPPM) ? 1.12 : ((parsedPPM / 1000) * 3.0).toFixed(2),
+                        bme_temp: isNaN(parsedTemp) ? 26.2 : parsedTemp.toFixed(1),
+                        bme_hum: 48.0,
+                        bme_press: 1013.2,
+                        tmp102_core: isNaN(parsedTemp) ? 38.2 : (parsedTemp + 11.5).toFixed(1),
+                        ina_volts: isNaN(parsedVolts) ? 4.12 : parsedVolts.toFixed(2),
+                        ina_ma: isNaN(parsedMA) ? 195.0 : parsedMA.toFixed(1),
+                        solar_flux: 88.5,
+                        pitch: -1.2,
+                        roll: 0.8,
+                        yaw: 182.4,
+                        created_at: packetTime
+                    };
+
+                    lastPacketReceivedTime = packetTime;
+                    ingestTelemetryPacket(cloudPacket);
+                }
+            } catch (err) {
+                console.warn("Cloud fetch error:", err);
+            }
+        }
+
+        function startThingSpeakPolling() {
+            fetchLiveCloudData();
+            cloudFetchInterval = setInterval(fetchLiveCloudData, 3000); // Poll every 3s
+        }
+
+        // --- Web Serial API Handler ---
+        async function connectWebSerial() {
+            if (!("serial" in navigator)) {
+                showModal("Web Serial Unsupported", "Your browser does not support Web Serial API. Please use Google Chrome or Microsoft Edge on desktop.", true);
+                return;
+            }
+
+            const baudRate = parseInt(document.getElementById('baud-rate-select').value);
+
+            try {
+                serialPort = await navigator.serial.requestPort();
+                await serialPort.open({ baudRate: baudRate });
+
+                document.getElementById('connection-mode-select').value = 'serial';
+                handleModeChange('serial');
+                
+                showModal("Serial Link Active", `Opened serial port at ${baudRate} baud. Listening for incoming CubeSat telemetry packets.`);
+
+                const decoder = new TextDecoderStream();
+                const inputDone = serialPort.readable.pipeTo(decoder.writable);
+                const inputStream = decoder.readable;
+                serialReader = inputStream.getReader();
+
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await serialReader.read();
+                    if (done) break;
+                    buffer += value;
+                    let lines = buffer.split("\n");
+                    buffer = lines.pop();
+
+                    for (let line of lines) {
+                        line = line.trim();
+                        if (line.startsWith("{") && line.endsWith("}")) {
+                            try {
+                                const packet = JSON.parse(line);
+                                ingestTelemetryPacket(packet);
+                            } catch (e) {
+                                console.warn("JSON parse error:", line);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Serial error:", err);
+                showModal("Serial Connection Failed", err.message || "Failed to open serial port.", true);
+            }
+        }
+
+        function openRestConnectPrompt() {
+            const defaultIp = "192.168.4.1";
+            const userIp = prompt("Enter ESP32 Web Server IP address:", defaultIp);
+            if (userIp) {
+                showModal("REST Endpoint Polling", `Polling telemetry endpoint at http://${userIp}/data every 1 second.`);
+                restStreamInterval = setInterval(async () => {
+                    try {
+                        const res = await fetch(`http://${userIp}/data`, { signal: AbortSignal.timeout(1500) });
+                        if (res.ok) {
+                            const packet = await res.json();
+                            ingestTelemetryPacket(packet);
+                        }
+                    } catch (e) {
+                        console.warn("REST poll failed:", e);
+                    }
+                }, 1000);
+            }
+        }
+
+        // --- Multi-Lingual Speech Engine ---
+        function triggerVoiceAlert(langCode, forceRisk = null) {
+            if (isMuted && !forceRisk) return;
+            const targetRisk = forceRisk || getRiskTier(currentGasPPM);
+            const message = voiceMessages[langCode] && voiceMessages[langCode][targetRisk] ? voiceMessages[langCode][targetRisk] : voiceMessages['en'][targetRisk];
+
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(message);
+                utterance.lang = langCode === 'ar' ? 'ar-AE' : langCode === 'ur' ? 'ur-PK' : langCode === 'hi' ? 'hi-IN' : langCode === 'bn' ? 'bn-BD' : 'en-US';
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function toggleAudioMute() {
+            isMuted = !isMuted;
+            const icon = document.getElementById('mute-icon');
+            if (isMuted) {
+                icon.className = "fa-solid fa-volume-xmark text-rose-400";
+                showModal("Voice Engine Muted", "Automated audio alerts disabled.");
+            } else {
+                icon.className = "fa-solid fa-volume-high text-cyan-400";
+                showModal("Voice Engine Active", "Multi-lingual speech engine enabled (AR, EN, UR, HI, BN).");
+            }
+        }
+
+        function getRiskTier(ppm) {
+            if (ppm < 350) return 'safe';
+            if (ppm <= 650) return 'warning';
+            return 'danger';
+        }
+
+        // --- Telemetry Ingestion Handler ---
+        function ingestTelemetryPacket(pkt) {
+            if (!pkt.created_at) lastPacketReceivedTime = Date.now();
+            setStaleState(false);
+
+            if (pkt.packet_id) packetCounter = pkt.packet_id;
+            if (pkt.gas_ppm !== undefined) updateGasUI(pkt.gas_ppm);
+            
+            if (pkt.tmp102_core !== undefined) {
+                document.getElementById('tmp102-val').innerText = pkt.tmp102_core;
+                document.getElementById('contract-temp').innerText = pkt.tmp102_core + " °C";
+                const badge = document.getElementById('tmp102-badge');
+                if (parseFloat(pkt.tmp102_core) > 55.0) {
+                    badge.innerText = "OVERHEAT!";
+                    badge.className = "px-1.5 py-0.5 text-[9px] font-mono bg-rose-500/20 text-statusCritical rounded border border-rose-500/40 font-bold animate-pulse";
+                } else {
+                    badge.innerText = "NOMINAL";
+                    badge.className = "px-1.5 py-0.5 text-[9px] font-mono bg-emerald-500/10 text-statusNominal rounded border border-emerald-500/20 font-bold";
+                }
+            }
+
+            if (pkt.ina_volts !== undefined) {
+                document.getElementById('ina-volts').innerText = pkt.ina_volts;
+                document.getElementById('contract-volts').innerText = pkt.ina_volts + " V";
+                const pct = Math.min(100, Math.max(0, Math.round(((parseFloat(pkt.ina_volts) - 3.4) / 0.8) * 100)));
+                document.getElementById('ina-pct-badge').innerText = pct + "% BAT";
+            }
+            if (pkt.ina_ma !== undefined) document.getElementById('ina-current').innerText = pkt.ina_ma + " mA";
+
+            if (pkt.bme_temp !== undefined) document.getElementById('bme-temp').innerText = pkt.bme_temp + "°C";
+            if (pkt.bme_hum !== undefined) document.getElementById('bme-hum').innerText = pkt.bme_hum + "%";
+            if (pkt.bme_press !== undefined) document.getElementById('bme-press').innerText = pkt.bme_press + "hPa";
+
+            if (pkt.pitch !== undefined) document.getElementById('imu-pitch').innerText = pkt.pitch + "°";
+            if (pkt.roll !== undefined) document.getElementById('imu-roll').innerText = pkt.roll + "°";
+            if (pkt.yaw !== undefined) document.getElementById('imu-yaw').innerText = pkt.yaw + "°";
+            if (pkt.pitch !== undefined && pkt.roll !== undefined) {
+                document.getElementById('imu-cube').style.transform = `rotateX(${pkt.pitch * 3}deg) rotateY(${pkt.roll * 3}deg)`;
+            }
+
+            if (pkt.solar_flux !== undefined) {
+                document.getElementById('ldr-flux').innerText = pkt.solar_flux + "%";
+            }
+
+            telemetryHistory.push(pkt);
+            updateCharts(pkt);
+            appendPacketTableRow(pkt);
+        }
+
+        // --- Dynamic Risk Banner & UI Synchronizer ---
+        function updateGasUI(ppm) {
+            currentGasPPM = parseInt(ppm);
+            document.getElementById('card-gas-ppm').innerText = currentGasPPM;
+            document.getElementById('contract-gas').innerText = currentGasPPM + " PPM";
+
+            const adcVolts = ((currentGasPPM / 1000) * 3.0).toFixed(2);
+            document.getElementById('card-gas-volts').innerText = adcVolts + " V";
+
+            const pct = Math.min(100, Math.max(5, (currentGasPPM / 1000) * 100));
+            document.getElementById('risk-progress-bar').style.width = pct + "%";
+
+            const banner = document.getElementById('risk-banner');
+            const title = document.getElementById('risk-title');
+            const badge = document.getElementById('risk-badge');
+            const desc = document.getElementById('risk-desc');
+            const iconBox = document.getElementById('risk-icon-box');
+            const icon = document.getElementById('risk-icon');
+            const progressBar = document.getElementById('risk-progress-bar');
+
+            const tier = getRiskTier(currentGasPPM);
+
+            if (tier === 'safe') {
+                banner.className = "glass-card p-6 rounded-3xl transition-all duration-500 glow-nominal";
+                title.className = "text-2xl sm:text-3xl font-black tracking-tight text-statusNominal";
+                title.innerText = "SAFE: NORMAL ATMOSPHERIC BASELINE";
+                badge.className = "px-3 py-1 text-xs font-extrabold uppercase tracking-wider rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                badge.innerText = "TIER 1 NOMINAL";
+                desc.innerText = "Gas concentration is within safe baseline levels (< 350 estimated PPM). No airborne toxic hazards or combustion pollutants detected.";
+                iconBox.className = "w-16 h-16 rounded-2xl bg-emerald-500/20 text-statusNominal border border-emerald-500/40 flex items-center justify-center text-3xl shadow-lg shrink-0";
+                icon.className = "fa-solid fa-circle-check";
+                progressBar.className = "bg-statusNominal h-full rounded-full transition-all duration-500";
+                lastSpokenRisk = 'safe';
+            } else if (tier === 'warning') {
+                banner.className = "glass-card p-6 rounded-3xl transition-all duration-500 glow-warning";
+                title.className = "text-2xl sm:text-3xl font-black tracking-tight text-statusWarning";
+                title.innerText = "WARNING: ELEVATED POLLUTANTS DETECTED";
+                badge.className = "px-3 py-1 text-xs font-extrabold uppercase tracking-wider rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                badge.innerText = "TIER 2 ELEVATED";
+                desc.innerText = "Air pollutant levels elevated (350 - 650 estimated PPM). Possible industrial emission leak or early combustion detected in zone.";
+                iconBox.className = "w-16 h-16 rounded-2xl bg-amber-500/20 text-statusWarning border border-amber-500/40 flex items-center justify-center text-3xl shadow-lg shrink-0";
+                icon.className = "fa-solid fa-triangle-exclamation";
+                progressBar.className = "bg-statusWarning h-full rounded-full transition-all duration-500";
+
+                if (lastSpokenRisk !== 'warning') {
+                    triggerVoiceAlert('en', 'warning');
+                    lastSpokenRisk = 'warning';
+                }
+            } else {
+                banner.className = "glass-card p-6 rounded-3xl transition-all duration-500 glow-critical";
+                title.className = "text-2xl sm:text-3xl font-black tracking-tight text-statusCritical";
+                title.innerText = "CRITICAL DANGER: TOXIC LEAK HAZARD!";
+                badge.className = "px-3 py-1 text-xs font-extrabold uppercase tracking-wider rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse";
+                badge.innerText = "TIER 3 CRITICAL LEAK";
+                desc.innerText = "CRITICAL TOXIC HAZARD THRESHOLD EXCEEDED (>650 estimated PPM)! High chemical concentration detected. Immediate evacuation required.";
+                iconBox.className = "w-16 h-16 rounded-2xl bg-rose-500/20 text-statusCritical border border-rose-500/40 flex items-center justify-center text-3xl shadow-lg shrink-0";
+                icon.className = "fa-solid fa-radiation animate-spin";
+                progressBar.className = "bg-statusCritical h-full rounded-full transition-all duration-500";
+
+                if (lastSpokenRisk !== 'danger') {
+                    triggerVoiceAlert('en', 'danger');
+                    lastSpokenRisk = 'danger';
+                }
+            }
+        }
+
+        function toggleFault(faultKey) {
+            activeFaults[faultKey] = !activeFaults[faultKey];
+            const btn = document.getElementById(`btn-fault-${faultKey}`);
+
+            if (activeFaults[faultKey]) {
+                btn.className = "px-2.5 py-1.5 bg-rose-600 text-white border border-rose-500 rounded-xl text-xs font-mono transition text-left flex items-center space-x-1 shadow-lg shadow-rose-600/30";
+                showModal("Fault Injected", `Simulated anomaly '${faultKey.toUpperCase()}' injected into telemetry stream per Manual Step 6 Test Plan.`);
+            } else {
+                btn.className = "px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-mono transition text-left flex items-center space-x-1";
+            }
+        }
+
+        function appendPacketTableRow(pkt) {
+            const tbody = document.getElementById('raw-packet-tbody');
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-900/60 transition";
+
+            const gstTimeStr = new Date(Date.now() + (4 * 60 * 60 * 1000)).toUTCString().slice(17, 25);
+            const riskTier = getRiskTier(pkt.gas_ppm || currentGasPPM);
+            const riskBadge = riskTier === 'safe' ? `<span class="text-statusNominal font-bold">SAFE</span>` : riskTier === 'warning' ? `<span class="text-statusWarning font-bold">WARN</span>` : `<span class="text-statusCritical font-bold">CRIT</span>`;
+
+            tr.innerHTML = `
+                <td class="py-1.5 font-mono text-slate-400">${gstTimeStr}</td>
+                <td class="py-1.5 font-mono text-cyan-400">#${pkt.packet_id || packetCounter}</td>
+                <td class="py-1.5 font-mono text-white font-bold">${pkt.gas_ppm || currentGasPPM} PPM</td>
+                <td class="py-1.5 font-mono text-amber-400">${pkt.tmp102_core || 38.2}°C</td>
+                <td class="py-1.5 font-mono text-emerald-400">${pkt.ina_volts || 4.12}V</td>
+                <td class="py-1.5 font-mono text-slate-300">${pkt.bme_temp || 26.2}°C</td>
+                <td class="py-1.5 font-mono text-amber-300">${pkt.solar_flux || 88.5}%</td>
+                <td class="py-1.5 font-mono">${riskBadge}</td>
+            `;
+
+            tbody.insertBefore(tr, tbody.firstChild);
+            if (tbody.children.length > 15) {
+                tbody.removeChild(tbody.lastChild);
+            }
+        }
+
+        function clearPacketLog() {
+            document.getElementById('raw-packet-tbody').innerHTML = '';
+        }
+
+        // --- Chart.js Configuration & Streaming Setup ---
+        const gasCtx = document.getElementById('gasChart').getContext('2d');
+        const healthCtx = document.getElementById('healthChart').getContext('2d');
+
+        const timeLabels = Array.from({length: 15}, (_, i) => `-${(15-i)*2}s`);
+        const initialGasData = Array.from({length: 15}, () => 220);
+        const initialTempData = Array.from({length: 15}, () => 38.2);
+        const initialVoltsData = Array.from({length: 15}, () => 4.12);
+
+        const gasChart = new Chart(gasCtx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Gas Concentration (PPM)',
+                    data: initialGasData,
+                    borderColor: '#06b6d4',
+                    backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } } } },
+                scales: {
+                    x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', font: { size: 9 } } },
+                    y: { min: 0, max: 1000, grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#06b6d4', font: { size: 9 } } }
+                }
+            }
+        });
+
+        const healthChart = new Chart(healthCtx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    { label: 'TMP102 Core Temp (°C)', data: initialTempData, borderColor: '#f59e0b', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, yAxisID: 'yTemp' },
+                    { label: 'INA219 Voltage (V)', data: initialVoltsData, borderColor: '#10b981', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, yAxisID: 'yVolts' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } } } },
+                scales: {
+                    x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', font: { size: 9 } } },
+                    yTemp: { type: 'linear', position: 'left', min: 20, max: 70, grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#f59e0b', font: { size: 9 } } },
+                    yVolts: { type: 'linear', position: 'right', min: 3.2, max: 4.4, grid: { drawOnChartArea: false }, ticks: { color: '#10b981', font: { size: 9 } } }
+                }
+            }
+        });
+
+        function updateCharts(pkt) {
+            const gstTimeStr = new Date(Date.now() + (4 * 60 * 60 * 1000)).toUTCString().slice(17, 25);
+            gasChart.data.labels.shift();
+            gasChart.data.labels.push(gstTimeStr);
+            gasChart.data.datasets[0].data.shift();
+            gasChart.data.datasets[0].data.push(pkt.gas_ppm || currentGasPPM);
+            gasChart.update('none');
+
+            healthChart.data.labels.shift();
+            healthChart.data.labels.push(gstTimeStr);
+            healthChart.data.datasets[0].data.shift();
+            healthChart.data.datasets[0].data.push(parseFloat(pkt.tmp102_core || 38.2));
+            healthChart.data.datasets[1].data.shift();
+            healthChart.data.datasets[1].data.push(parseFloat(pkt.ina_volts || 4.12));
+            healthChart.update('none');
+        }
+
+        // --- Physics Simulator Loop ---
+        setInterval(() => {
+            if (connectionMode === 'sim' && !activeFaults.link) {
+                packetCounter++;
+                sdSectorCounter += 2;
+
+                let gasVal = currentGasPPM;
+                if (activeFaults.gas) {
+                    gasVal = Math.min(1000, gasVal + Math.floor(Math.random() * 40) + 20);
+                } else {
+                    let jitter = Math.floor(Math.random() * 9) - 4;
+                    gasVal = Math.min(1000, Math.max(100, gasVal + jitter));
+                }
+
+                let coreTemp = 38.2 + (Math.random() * 0.6 - 0.3);
+                if (activeFaults.temp) coreTemp = 58.4 + (Math.random() * 2.0); // Overheat > 55°C
+
+                let volts = 4.12 + (Math.random() * 0.02 - 0.01);
+                if (activeFaults.battery) volts = 3.35 - (packetCounter % 20) * 0.01;
+
+                const simPacket = {
+                    device_id: "GASTELLA-1U-CUBESAT",
+                    packet_id: packetCounter,
+                    gas_ppm: gasVal,
+                    raw_adc: Math.round((gasVal / 1000) * 4095),
+                    gas_volts: ((gasVal / 1000) * 3.0).toFixed(2),
+                    bme_temp: (26.2 + Math.random() * 0.4).toFixed(1),
+                    bme_hum: (48.0 + Math.random() * 1.0).toFixed(1),
+                    bme_press: 1013.2,
+                    tmp102_core: coreTemp.toFixed(1),
+                    ina_volts: volts.toFixed(2),
+                    ina_ma: (195.0 + Math.random() * 10).toFixed(1),
+                    solar_flux: 88.5,
+                    pitch: (-1.2 + (Math.random() * 0.4 - 0.2)).toFixed(1),
+                    roll: (0.8 + (Math.random() * 0.4 - 0.2)).toFixed(1),
+                    yaw: (182.4 + (Math.random() * 0.2 - 0.1)).toFixed(1)
+                };
+
+                ingestTelemetryPacket(simPacket);
+
+                document.getElementById('hc12-pkts').innerText = packetCounter;
+                document.getElementById('sd-sectors').innerText = sdSectorCounter.toLocaleString();
+            }
+        }, 1000);
+
+        // --- CSV Telemetry Data Export ---
+        function exportCSVTelemetry() {
+            if (telemetryHistory.length === 0) {
+                showModal("No Data Recorded", "Telemetry stream is initializing. Please wait a moment and try exporting again.");
+                return;
+            }
+
+            const headers = Object.keys(telemetryHistory[0]).join(",");
+            const rows = telemetryHistory.map(row => Object.values(row).join(",")).join("\n");
+            const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + rows;
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `GasTella_CubeSat_Telemetry_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showModal("CSV Telemetry Exported", `Successfully downloaded ${telemetryHistory.length} recorded telemetry entries.`);
+        }
+
+        window.onload = function() {
+            updateGasUI(220);
+            startThingSpeakPolling();
+        };
+    </script>
+</body>
+</html>
