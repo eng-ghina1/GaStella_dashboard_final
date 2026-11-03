@@ -112,7 +112,7 @@
                     </div>
                     <div>
                         <h3 class="text-base font-bold text-white">ESP32 Firmware Code Reference</h3>
-                        <p class="text-xs text-slate-400 font-mono">Arduino C++ Hardware Code with ThingSpeak HTTP POST & Radio Downlink</p>
+                        <p class="text-xs text-slate-400 font-mono">Arduino C++ Hardware Code for Channel 3563693</p>
                     </div>
                 </div>
                 <button onclick="closeCodeModal()" class="text-slate-400 hover:text-white p-2">
@@ -121,7 +121,7 @@
             </div>
 
             <p class="text-xs text-slate-300">
-                Flash this code to your satellite ESP32. It reads all sensors (MQ-135 on GPIO 34, DHT11 on GPIO 27, DS18B20 on GPIO 26, INA219/MPU6050 on I2C GPIO 21/22), transmits over HC-12 433MHz (GPIO 16/17), and posts telemetry straight to ThingSpeak Cloud API over Wi-Fi.
+                Flash this code to your satellite ESP32. It reads all sensors (MQ-135 on GPIO 34, DHT11 on GPIO 27, DS18B20 on GPIO 26, INA219/MPU6050 on I2C GPIO 21/22), transmits over HC-12 433MHz (GPIO 16/17), and posts telemetry straight to ThingSpeak Channel <strong class="text-cyan-400">3563693</strong> over Wi-Fi.
             </p>
 
             <div class="relative bg-slate-950 p-4 rounded-2xl border border-slate-800 overflow-y-auto font-mono text-xs text-cyan-300 leading-relaxed flex-1">
@@ -129,7 +129,7 @@
                     <i class="fa-solid fa-copy mr-1"></i> Copy Code
                 </button>
 <pre id="esp32-code-block"><code>/*
- * GasTella 1U CubeSat - ThingSpeak Cloud & HC-12 Firmware
+ * GasTella 1U CubeSat - ThingSpeak Cloud (Channel 3563693) & HC-12 Firmware
  * Satellite Flight Computer Code
  */
 
@@ -143,7 +143,7 @@
 // --- Wi-Fi & ThingSpeak Configuration ---
 const char* WIFI_SSID = "YOUR_WIFI_NAME";
 const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
-const char* TS_API_KEY = "YOUR_THINGSPEAK_WRITE_KEY";
+const char* TS_API_KEY = "YOUR_THINGSPEAK_WRITE_KEY"; // From ThingSpeak API Keys tab
 
 // --- Hardware Pin Definitions ---
 #define MQ135_PIN      34  // Analog Input (1k/1.5k divider)
@@ -184,7 +184,7 @@ void loop() {
   float current_mA = ina219.getCurrent_mA();
   if (busVoltage <= 0) busVoltage = 4.12;
 
-  // Post to ThingSpeak Cloud API every 15 seconds (Free limit)
+  // Post to ThingSpeak Channel 3563693 every 15 seconds (Free tier limit)
   if (millis() - lastCloudPost > 15000) {
     if (WiFi.status() == WL_CONNECTED) {
       HTTPClient http;
@@ -262,7 +262,7 @@ void loop() {
                         <button id="btn-connect-serial" onclick="connectWebSerial()" class="ml-2 px-2.5 py-1 bg-cyan-600/30 text-cyan-200 hover:bg-cyan-600/50 rounded-lg text-xs font-sans">Connect</button>
                     </div>
 
-                    <!-- Link Status Badge (SatForge Rules: Nominal Green, Warning Yellow, Stale Grey) -->
+                    <!-- Link Status Badge -->
                     <div id="link-status-badge" class="flex items-center space-x-2 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 text-emerald-400">
                         <span class="relative flex h-2 w-2">
                             <span id="ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -301,7 +301,7 @@ void loop() {
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
                     <span class="text-slate-400 text-[11px]">Channel ID:</span>
-                    <input type="text" id="ts-channel-input" value="2748190" placeholder="e.g. 2748190" class="bg-transparent text-cyan-300 w-28 text-xs focus:outline-none border-b border-cyan-500/50">
+                    <input type="text" id="ts-channel-input" value="3563693" placeholder="3563693" class="bg-transparent text-cyan-300 w-28 text-xs focus:outline-none border-b border-cyan-500/50">
                 </div>
                 <div class="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
                     <span class="text-slate-400 text-[11px]">Read API Key:</span>
@@ -314,7 +314,7 @@ void loop() {
         </div>
     </header>
 
-    <!-- Stale Data Warning Banner (Rule: "Never hide missing data") -->
+    <!-- Stale Data Warning Banner -->
     <div id="stale-data-banner" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 hidden">
         <div class="bg-slate-800/95 border border-slate-600 p-4 rounded-2xl flex items-center justify-between text-slate-300 shadow-xl glow-stale">
             <div class="flex items-center space-x-3">
@@ -326,7 +326,7 @@ void loop() {
                         <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono">STALE DATA WARNING — Cloud Stream Idle</h3>
                         <span id="stale-age-tag" class="px-2 py-0.5 text-[9px] font-mono bg-slate-700 text-slate-300 rounded border border-slate-600 font-bold">AGE: > 3.0s</span>
                     </div>
-                    <p class="text-xs text-slate-400">SatForge Rule Section 1.5: 'Never hide missing data'. Displaying last valid buffered telemetry snapshot. Verify ThingSpeak stream or ESP32 Wi-Fi power.</p>
+                    <p class="text-xs text-slate-400">SatForge Rule Section 1.5: 'Never hide missing data'. Displaying last valid buffered telemetry snapshot. Verify ThingSpeak Channel 3563693 or ESP32 Wi-Fi power.</p>
                 </div>
             </div>
             <button onclick="handleModeChange('sim')" class="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-medium font-sans transition shrink-0">
@@ -575,6 +575,7 @@ void loop() {
 
                 <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800 font-mono text-[11px] space-y-1.5 text-slate-300">
                     <div class="flex justify-between border-b border-slate-800 pb-1"><span class="text-slate-400">device_id:</span><span class="text-cyan-400">GASTELLA-1U-CUBESAT</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">channel_id:</span><span class="text-purple-300 font-bold">3563693</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">mq135_ppm:</span><span id="contract-gas" class="text-white font-bold">220 PPM</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">tmp102_core:</span><span id="contract-temp" class="text-amber-400 font-bold">38.2 °C</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">ina219_bus_v:</span><span id="contract-volts" class="text-emerald-400 font-bold">4.12 V</span></div>
@@ -631,7 +632,7 @@ void loop() {
 
     <!-- Footer -->
     <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 text-center text-xs text-slate-500 font-mono">
-        <p>GasTella 1U CubeSat Mission Control Dashboard • SatForge Competition • SpacePoint & National Space Academy</p>
+        <p>GasTella 1U CubeSat Mission Control Dashboard • Channel 3563693 • SatForge Competition • SpacePoint & National Space Academy</p>
     </footer>
 
     <!-- JavaScript Application Engine -->
@@ -643,7 +644,7 @@ void loop() {
         let restStreamInterval = null;
         let cloudFetchInterval = null;
 
-        let channelID = "2748190";
+        let channelID = "3563693";
         let readAPIKey = "";
 
         let lastPacketReceivedTime = Date.now();
@@ -798,7 +799,7 @@ void loop() {
 
         // --- ThingSpeak Cloud API Fetch Logic ---
         function saveAndFetchThingSpeak() {
-            channelID = document.getElementById('ts-channel-input').value.trim() || "2748190";
+            channelID = document.getElementById('ts-channel-input').value.trim() || "3563693";
             readAPIKey = document.getElementById('ts-key-input').value.trim();
             showModal("ThingSpeak Config Updated", `Fetching live channel feed for Channel ID #${channelID}...`);
             fetchLiveCloudData();
