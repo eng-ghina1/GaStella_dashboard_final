@@ -805,57 +805,29 @@ void loop() {
             fetchLiveCloudData();
         }
 
-        async function fetchLiveCloudData() {
-            if (connectionMode !== 'thingspeak') return;
+ async function fetchLiveCloudData() {
+    if (connectionMode !== 'thingspeak') return;
 
-            let url = `https://api.thingspeak.com/channels/${channelID}/feeds/last.json`;
-            if (readAPIKey) {
-                url += `?api_key=${readAPIKey}`;
-            }
+    // Append random timestamp to bypass browser API caching
+    let url = `https://api.thingspeak.com/channels/${channelID}/fields/1/last.json?nocache=${Date.now()}`;
+    if (readAPIKey) {
+        url += `&api_key=${readAPIKey}`;
+    }
 
-            try {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("ThingSpeak response not OK");
-                const data = await res.json();
+    try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error("ThingSpeak fetch failed");
+        const data = await res.json();
 
-                if (data && data.entry_id) {
-                    packetCounter = data.entry_id;
-
-                    const parsedPPM = parseFloat(data.field1);
-                    const parsedTemp = parseFloat(data.field2);
-                    const parsedVolts = parseFloat(data.field3);
-                    const parsedRaw = parseInt(data.field4);
-                    const parsedMA = parseFloat(data.field5);
-
-                    // ALWAYS use local browser time for packet receipt to avoid UTC/GST timezone offset mismatch
-                    const packetTime = Date.now();
-
-                    const cloudPacket = {
-                        device_id: "GASTELLA-1U-CUBESAT",
-                        packet_id: data.entry_id,
-                        gas_ppm: isNaN(parsedPPM) ? 220 : parsedPPM,
-                        raw_adc: isNaN(parsedRaw) ? 902 : parsedRaw,
-                        gas_volts: isNaN(parsedPPM) ? 1.12 : ((parsedPPM / 1000) * 3.0).toFixed(2),
-                        bme_temp: isNaN(parsedTemp) ? 26.2 : parsedTemp.toFixed(1),
-                        bme_hum: 48.0,
-                        bme_press: 1013.2,
-                        tmp102_core: isNaN(parsedTemp) ? 38.2 : (parsedTemp + 11.5).toFixed(1),
-                        ina_volts: isNaN(parsedVolts) ? 4.12 : parsedVolts.toFixed(2),
-                        ina_ma: isNaN(parsedMA) ? 195.0 : parsedMA.toFixed(1),
-                        solar_flux: 88.5,
-                        pitch: -1.2,
-                        roll: 0.8,
-                        yaw: 182.4,
-                        created_at: packetTime
-                    };
-
-                    lastPacketReceivedTime = packetTime;
-                    ingestTelemetryPacket(cloudPacket);
-                }
-            } catch (err) {
-                console.warn("Cloud fetch error:", err);
-            }
+        if (data && data.entry_id) {
+            lastPacketReceivedTime = Date.now();
+            setStaleState(false);
+            ingestTelemetryPacket(data);
         }
+    } catch (err) {
+        console.warn("Cloud fetch error:", err);
+    }
+}
 
         function startThingSpeakPolling() {
             fetchLiveCloudData();
