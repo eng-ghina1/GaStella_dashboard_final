@@ -741,13 +741,13 @@ void loop() {
             const gstTime = new Date(now.getTime() + (4 * 60 * 60 * 1000));
             document.getElementById('gst-clock').innerText = gstTime.toUTCString().slice(17, 25) + " GST";
 
-            // Check Stale Data Rule (> 3.0s delay)
-            const ageSeconds = ((Date.now() - lastPacketReceivedTime) / 1000).toFixed(1);
+            // Check Stale Data Rule (> 120.0s threshold to avoid cloud rate-limit false alerts)
+            const ageSeconds = Math.max(0, (Date.now() - lastPacketReceivedTime) / 1000).toFixed(1);
             document.getElementById('stale-age-tag').innerText = `AGE: ${ageSeconds}s`;
 
-            if (ageSeconds > 3.0 && !isStale) {
+            if (ageSeconds > 120.0 && !isStale) {
                 setStaleState(true);
-            } else if (ageSeconds <= 3.0 && isStale) {
+            } else if (ageSeconds <= 120.0 && isStale) {
                 setStaleState(false);
             }
         }
@@ -797,7 +797,7 @@ void loop() {
             }
         }
 
-        // --- ThingSpeak Cloud API Fetch Logic ---
+        // --- ThingSpeak Cloud API Fetch Logic (FIXED FOR TIMEZONE BUG) ---
         function saveAndFetchThingSpeak() {
             channelID = document.getElementById('ts-channel-input').value.trim() || "3563693";
             readAPIKey = document.getElementById('ts-key-input').value.trim();
@@ -827,7 +827,8 @@ void loop() {
                     const parsedRaw = parseInt(data.field4);
                     const parsedMA = parseFloat(data.field5);
 
-                    const packetTime = data.created_at ? new Date(data.created_at).getTime() : Date.now();
+                    // ALWAYS use local browser time for packet receipt to avoid UTC/GST timezone offset mismatch
+                    const packetTime = Date.now();
 
                     const cloudPacket = {
                         device_id: "GASTELLA-1U-CUBESAT",
@@ -858,7 +859,7 @@ void loop() {
 
         function startThingSpeakPolling() {
             fetchLiveCloudData();
-            cloudFetchInterval = setInterval(fetchLiveCloudData, 3000); // Poll every 3s
+            cloudFetchInterval = setInterval(fetchLiveCloudData, 5000); // Poll every 5s
         }
 
         // --- Web Serial API Handler ---
@@ -964,7 +965,7 @@ void loop() {
 
         // --- Telemetry Ingestion Handler ---
         function ingestTelemetryPacket(pkt) {
-            if (!pkt.created_at) lastPacketReceivedTime = Date.now();
+            lastPacketReceivedTime = Date.now();
             setStaleState(false);
 
             if (pkt.packet_id) packetCounter = pkt.packet_id;
