@@ -742,12 +742,13 @@ void loop() {
             document.getElementById('gst-clock').innerText = gstTime.toUTCString().slice(17, 25) + " GST";
 
             // Check Stale Data Rule (> 120.0s threshold to avoid cloud rate-limit false alerts)
+           // Check Stale Data Rule (> 15.0s delay to allow ThingSpeak API polling window)
             const ageSeconds = Math.max(0, (Date.now() - lastPacketReceivedTime) / 1000).toFixed(1);
             document.getElementById('stale-age-tag').innerText = `AGE: ${ageSeconds}s`;
-
-            if (ageSeconds > 120.0 && !isStale) {
+            
+            if (ageSeconds > 15.0 && !isStale) {
                 setStaleState(true);
-            } else if (ageSeconds <= 120.0 && isStale) {
+            } else if (ageSeconds <= 15.0 && isStale) {
                 setStaleState(false);
             }
         }
